@@ -136,7 +136,7 @@ int main()
     auto stream = rsCfg.rsProfile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
     auto intrinsics = stream.get_intrinsics();
 
-    float vpixel[2];
+    float vPixel[2];
     float vPoint[3] = {0,0,0};
 
     rs2::align align(rsCfg.rsAlignTo);
@@ -156,7 +156,9 @@ int main()
         Mat color(Size(rsCfg.colorRes[0], rsCfg.colorRes[1]), CV_8UC3, (void*)other_frame.get_data(), Mat::AUTO_STEP);
         std::array<int, 2> trackPos = processFrame(color);
 
-        rs2_deproject_pixel_to_point(vPoint, &intrinsics, vpixel, depth.get_distance(trackPos[0], trackPos[1]));
+        vPixel[0] = trackPos[0];
+        vPixel[1] = trackPos[1];
+        rs2_deproject_pixel_to_point(vPoint, &intrinsics, vPixel, depth.get_distance(trackPos[0], trackPos[1]));
 
         std::array<float, 3> vec = {vPoint[0], vPoint[1], vPoint[2]};
         if (displayUi(trackPos[0], trackPos[1] , color,  vec)) {
