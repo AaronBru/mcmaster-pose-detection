@@ -5,18 +5,41 @@
 
 using namespace cv;
 
+
 struct rsConfig {
-    rs2::config           rsCfg;
-    rs2::align            rsAlign;
-    rs2::pipeline         pipe;
-    rs2::pipeline_profile profile;
+    rs2::pipeline         rsPipe;
+    rs2::pipeline_profile rsProfile;
+    rs2_stream            rsAlignTo;
 
     int colorFps;
     int depthFps;
 
-    std::tuple<int, int>  depthRes;
-    std::tuple<int, int>  colorRes;;
+    std::array<int, 2>  depthRes;
+    std::array<int, 2>  colorRes;;
 };
+
+
+static void initRsCam(struct rsConfig &rsCfg)
+{
+    rsCfg.depthRes = {640, 480};
+    rsCfg.colorRes = {1920, 1080};
+    rsCfg.colorFps = 30;
+    rsCfg.depthFps = 30;
+
+    //Enable streams
+    rs2::config config;
+    config.enable_stream(RS2_STREAM_COLOR, rsCfg.colorRes[0], rsCfg.colorRes[1], RS2_FORMAT_BGR8, rsCfg.colorFps);
+    config.enable_stream(RS2_STREAM_DEPTH, rsCfg.depthRes[0], rsCfg.depthRes[1], RS2_FORMAT_Z16,  rsCfg.depthFps);
+
+    //Begin rs2 pipeline
+    rs2::pipeline pipe;
+    rsCfg.rsPipe = pipe;
+    rsCfg.rsProfile = rsCfg.rsPipe.start(config);
+
+    //Initialize alignment
+    rsCfg.rsAlignTo = RS2_STREAM_COLOR;
+}
+
 
 static bool displayUi(int& left, int& up, Mat& image, std::array<float, 3> vector)
 {
@@ -34,6 +57,7 @@ static bool displayUi(int& left, int& up, Mat& image, std::array<float, 3> vecto
     char button;
     button = waitKey(1);
     if (button == 27) {
+        destroyAllWindows();
         return true;
     }
     else if (button == 'w') {
@@ -54,42 +78,27 @@ static bool displayUi(int& left, int& up, Mat& image, std::array<float, 3> vecto
 
 int main() 
 {
-    const int colorWidth  = 1920;
-    const int colorHeight = 1080;
+    struct rsConfig rsCfg;
+    initRsCam(rsCfg);
 
-    const int depthWidth  = 640;
-    const int depthHeight = 480;
 
-    const int fpsColor = 30;
-    const int fpsDepth = 30;
-
-    //Enable streams
-    rs2::config config;
-    config.enable_stream(RS2_STREAM_COLOR, colorWidth, colorHeight, RS2_FORMAT_BGR8, fpsColor);
-    config.enable_stream(RS2_STREAM_DEPTH, depthWidth, depthHeight, RS2_FORMAT_Z16,  fpsDepth);
-
-    //Begin rs2 pipeline
-    rs2::pipeline pipe;
-    rs2::pipeline_profile profile = pipe.start(config);
-
-    //Initialize alignment
-    rs2_stream align_to = RS2_STREAM_COLOR;
-    rs2::align align(RS2_STREAM_COLOR);
-
-    auto stream = profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
+    auto stream = rsCfg.rsProfile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
     auto intrinsics = stream.get_intrinsics();
 
-    int left = colorWidth / 2;
-    int up   = colorHeight / 2;
+    int left = rsCfg.colorRes[0] / 2;
+    int up   = rsCfg.colorRes[1] / 2;
 
     float vpixel[2];
     float vPoint[3] = {0,0,0};
 
-    while(true) {
-        rs2::frameset frames = pipe.wait_for_frames();
+    rs2::align align(rsCfg.rsAlignTo);
 
+    while(true) {
+
+        rs2::frameset frames = rsCfg.rsPipe.wait_for_frames();
         auto processed = align.process(frames);
-        rs2::video_frame other_frame = processed.first_or_default(align_to);
+
+        rs2::video_frame other_frame = processed.first_or_default(rsCfg.rsAlignTo);
         rs2::depth_frame depth       = processed.get_depth_frame();
 
         if (!other_frame || !depth) {
@@ -101,14 +110,12 @@ int main()
         rs2_deproject_pixel_to_point(vPoint, &intrinsics, vpixel, depth.get_distance(left, up));
 
         std::array<float, 3> vec = {vPoint[0], vPoint[1], vPoint[2]};
-        Mat color(Size(colorWidth, colorHeight), CV_8UC3, (void*)other_frame.get_data(), Mat::AUTO_STEP);
+        Mat color(Size(rsCfg.colorRes[0], rsCfg.colorRes[1]), CV_8UC3, (void*)other_frame.get_data(), Mat::AUTO_STEP);
 
         if (displayUi(left, up, color,  vec)) {
             break;
         }
     }
-
-    destroyAllWindows();
 
     return 0;
 }
