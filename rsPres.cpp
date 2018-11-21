@@ -82,6 +82,21 @@ void normVector(float (*vector)[3])
     (*vector)[2] = (*vector[2]) / mag;
 }
 
+float testRotation(Mat& rot, Mat& refFrame, Mat& finalFrame)
+{
+    Mat error(3, 3, CV_32FC1);
+    error = rot * refFrame - finalFrame;
+    error = error * 10000.0;
+
+    float totalError = 0;
+    for (size_t i = 0; i < 3; i++) { 
+        for (size_t j; j < 3; j++) {
+            totalError += std::fabs(error.at<float>(i,j));
+        }
+    }
+    return totalError;
+}
+
 
 static float originalPoints[3][3] = {{-0.13/3,        -0.1/3,      0},
                                      {0.1 - 0.13/3,   -0.1/3,      0},
@@ -215,102 +230,65 @@ std::array<int, 2> processFrame(Mat& origFrame, Mat& depthFrame, const struct rs
                 points[i][2] -= centroid[2];
             }
 
-            float dx1 = points[0][0] - points[1][0];
-            float dx2 = points[0][0] - points[2][0];
-            float dx3 = points[1][0] - points[2][0];
 
-            float dy1 = points[0][1] - points[1][1];
-            float dy2 = points[0][1] - points[2][1];
-            float dy3 = points[1][1] - points[2][1];
-
-            float dz1 = points[0][2] - points[1][2];
-            float dz2 = points[0][2] - points[2][2];
-            float dz3 = points[1][2] - points[2][2];
-
-            float d1 = std::sqrt(dx1 * dx1  + dy1 * dy1 + dz1 * dz1);
-            float d2 = std::sqrt(dx2 * dx2  + dy2 * dy2 + dz2 * dz2);
-            float d3 = std::sqrt(dx3 * dx3  + dy3 * dy3 + dz3 * dz3);
-
-            int originMarker, parallel, perpendicular;
-            if (d1 > d2 && d1 > d3) {
-                originMarker = 2;
-
-                if (d2 > d3) {
-                    parallel      = 1;
-                    perpendicular = 0;
-                }
-                else {
-                    parallel      = 0;
-                    perpendicular = 1;
-                }
-
-            }
-            else if (d2 > d3 && d2 > d1) {
-                originMarker = 1;
-
-                if (d3 > d1) {
-                    parallel      = 0;
-                    perpendicular = 2;
-                }
-                else {
-                    parallel      = 2;
-                    perpendicular = 0;
-                }
-
-            }
-            else if (d3 > d1 && d3 > d2) {
-                originMarker = 0;
-
-                if (d1 > d2) {
-                    parallel      = 2;
-                    perpendicular = 1;
-                }
-                else {
-                    parallel      = 1;
-                    perpendicular = 2;
-                }
-            }
-
-            float sortedPoints[3][3];
-            for (size_t i = 0; i < 3; i++) {
-                sortedPoints[0][i] = points[originMarker][i]; 
-                sortedPoints[1][i] = points[parallel][i]; 
-                sortedPoints[2][i] = points[perpendicular][i]; 
-            }
-
+            Mat newPoints(Size(3, 3), CV_32FC1, points);
+            Mat newPointsOrig = newPoints.clone();
             Mat refPoints(Size(3, 3), CV_32FC1, originalPoints);
-            transpose(refPoints, refPoints);
-
-            Mat newPoints(Size(3, 3), CV_32FC1, sortedPoints);
-            Mat crossCov(Size(3, 3), CV_32FC1);
-            crossCov = refPoints * newPoints;
-
-            Mat Ut  = Mat(Size(3, 3), CV_32FC1);
-            Mat S  = Mat(Size(3, 3), CV_32FC1);
-            Mat V = Mat(Size(3, 3), CV_32FC1);
-
-            
-            
-            SVD::compute(crossCov, S, Ut, V);
-            transpose(Ut, Ut);
-            transpose(V, V);
+            Mat refPointsT;
+            transpose(refPoints, refPointsT);
 
             Mat rot(Size(3, 3), CV_32FC1);
-            float signCorrection = (determinant(V*Ut) > 0) ? 1 : -1;
-            float correctFloat[3][3] = {{1.0, 0, 0}, {0, 1.0, 0}, {0, 0, signCorrection}};
-            Mat correct(Size(3, 3), CV_32FC1, correctFloat);
-            rot = V * correct * Ut;
+            Mat bestRot;
 
-            std::cout << S.at<float>(0,0) << " " << S.at<float>(1,1) << " " << S.at<float>(2,2) << "\n";
+            Mat Ut = Mat(Size(3, 3), CV_32FC1);
+            Mat S  = Mat(Size(3, 3), CV_32FC1);
+            Mat V  = Mat(Size(3, 3), CV_32FC1);
+
+            float minError = 10000000.0;
+            int minIndex = 0;
+            float test = 0.0;
+
+            for (size_t i = 0; i < 6; i++) {
+
+                Mat tempRow;
+                if (i == 4) {
+                    tempRow = newPoints.row(1).clone();
+                    newPoints.row(2).copyTo(newPoints.row(1));
+                    tempRow.copyTo(newPoints.row(2));
+                }
+
+                tempRow  = newPoints.row(0).clone();
+                newPoints.row(2).copyTo(newPoints.row(0));
+                newPoints.row(1).copyTo(newPoints.row(2));
+                tempRow.copyTo(newPoints.row(1));
+
+                Mat crossCov = refPointsT * newPoints;
+
+                SVD::compute(crossCov, S, Ut, V);
+                transpose(Ut, Ut);
+                transpose(V, V);
+
+                float signCorrection = (determinant(V*Ut) > 0) ? 1 : -1;
+                float correctFloat[3][3] = {{1.0, 0, 0}, {0, 1.0, 0}, {0, 0, signCorrection}};
+                Mat correct(Size(3, 3), CV_32FC1, correctFloat);
+                rot = V * correct * Ut;
+                test = testRotation(rot, refPoints, newPoints);
+
+                if (test < minError) {
+                    minError = test;
+                    bestRot = rot.clone();
+                }
+            }
+            bestRot = rot.clone();
 
             float origPixel[2];
             float xPixel[2];
             float yPixel[2];
             float zPixel[2];
 
-            float xPoint[3] = {rot.at<float>(0, 0)/3, rot.at<float>(1, 0)/3, rot.at<float>(2, 0)/3};
-            float yPoint[3] = {rot.at<float>(0, 1)/3, rot.at<float>(1, 1)/3, rot.at<float>(2, 1)/3};
-            float zPoint[3] = {rot.at<float>(0, 2)/3, rot.at<float>(1, 2)/3, rot.at<float>(2, 2)/3};
+            float xPoint[3] = {bestRot.at<float>(0, 0)/3, bestRot.at<float>(1, 0)/3, bestRot.at<float>(2, 0)/3};
+            float yPoint[3] = {bestRot.at<float>(0, 1)/3, bestRot.at<float>(1, 1)/3, bestRot.at<float>(2, 1)/3};
+            float zPoint[3] = {bestRot.at<float>(0, 2)/3, bestRot.at<float>(1, 2)/3, bestRot.at<float>(2, 2)/3};
 
             rs2_project_point_to_pixel(origPixel, intrinsics, centroid);
             rs2_project_point_to_pixel(xPixel, intrinsics, xPoint);
