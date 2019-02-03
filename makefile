@@ -1,14 +1,14 @@
-NAME   = presentation
+NAME   = markerDetection
 
 CC     = g++
-SRC    = rsPres.cpp
+SRC    = markerDetection.cpp
 OBJ    = $(subst .cpp,.o,$(SRC))
 
 OPENCV   = $(shell pkg-config opencv --cflags --libs)
 INC      = -I/usr/bin/local/include/
 CPPFLAGS = -Wall -g -std=gnu++11
 LDFLAGS  = -g
-LDLIBS   = -L/usr/local/lib/ -lrealsense2 $(OPENCV)
+LDLIBS   = -L/usr/local/lib/ -lrealsense2 $(OPENCV) -lopencv_aruco
 
 all: $(NAME)
 
