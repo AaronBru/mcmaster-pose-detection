@@ -1,6 +1,6 @@
 NAME   = markerDetection
 
-ARUCO_PATH = aruco
+ARUCO_PATH = aruco_tx2
 
 SRC_DIRS = src
 INC_DIRS = include

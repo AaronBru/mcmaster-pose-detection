@@ -1,0 +1,3 @@
+[submodule "aruco_tx2"]
+	path = aruco_tx2
+	url = https://github.com/AaronBru/aruco_tx2.git
