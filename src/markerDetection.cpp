@@ -1,3 +1,9 @@
+/********************************************************************************
+
+Example application illustrating use of this library to detect pose of an object.
+
+*********************************************************************************/
+
 #include "aruco.hpp"
 #include "rsCam.hpp"
 #include "detectPoseRealsense.hpp"
@@ -28,6 +34,8 @@ std::vector<int> validIds {FACE_ID, SIDE_ID, TOP_ID};
 
 #define MARKER_WIDTH 0.05
 
+/* Set up positions of corners on object with respect to Aruco markers. Corners are referenced clockwise, 
+beginning from the top left corner. */
 static float facePoints[POINTS_PER_MARKER][3] =     {{-MARKER_WIDTH / 2,  MARKER_WIDTH / 2, OBJECT_DEPTH / 2},
                                                      { MARKER_WIDTH / 2,  MARKER_WIDTH / 2, OBJECT_DEPTH / 2},
                                                      { MARKER_WIDTH / 2, -MARKER_WIDTH / 2, OBJECT_DEPTH / 2},
@@ -51,6 +59,7 @@ static       std::map<int, Mat> objectMarker = {{FACE_ID, faceMarker},
                                                  {SIDE_ID, sideMarker},
                                                  {TOP_ID,  topMarker}};
 
+/* Helper function to display window. Hit escape to close application */
 static bool displayUi(int xTarget, int yTarget, Mat& image)
 {
     namedWindow("Show Image", WINDOW_AUTOSIZE);
@@ -71,6 +80,7 @@ int main()
 {
     struct rsConfig rsCfg;
 
+    /* Set up parameters.  Note this application does not use IR, but only depth and color */
     rsCfg.depthRes = {640, 480};
     rsCfg.irRes    = {640, 480};
     rsCfg.colorRes = {640, 480};
@@ -78,6 +88,7 @@ int main()
     rsCfg.irFps    = 60;
     rsCfg.depthFps = 60;
 
+    /* Initialize camera */
     initRsCam(rsCfg);
 
     auto stream = rsCfg.rsProfile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
@@ -86,6 +97,7 @@ int main()
     rs2::frame_queue frameQueue(5);
     std::atomic_bool alive {true};
 
+    /* This thread used solely to receive frames and check if color and depth frames are valid */
     std::thread rxFrame([&]() {
         while(alive) {
 
@@ -105,12 +117,14 @@ int main()
     auto start = std::chrono::high_resolution_clock::now();
     char frameRate[10];
 
+    /* Note that validIds is a vector of all ids that are searched among ALL objects */
     DetectPoseRealsense poseDetect(&intrinsics, rsCfg.depthScale, validIds);
     Mat rot(Size(3,3), CV_32FC1);
     std::array<float, 3> translation {0, 0, 0};
 
     rs2::align align(rsCfg.rsAlignTo);
     while(alive) {
+        /* Receive frames from other thread here */
         frameQueue.poll_for_frame(&curFrame);
 
         if (curFrame) {
@@ -128,10 +142,12 @@ int main()
             Mat depthFrame(Size(depth_width, depth_height), CV_16UC1, (void*)depth.get_data(), Mat::AUTO_STEP);
             poseDetect.processFrame(origFrame, depthFrame);
 
+            /* Detect pose here with the object map created above */
             if (poseDetect.getPose(objectMarker, rot, translation)) {
                 drawMarker(rot, translation, &intrinsics, origFrame);
             }
 
+            /* Determine latency in milliseconds between frames */
             auto elapsed = std::chrono::high_resolution_clock::now() - start;
             float milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
             printf("TIME: %02f\n", milliseconds);
@@ -140,6 +156,8 @@ int main()
 
             start = std::chrono::high_resolution_clock::now();
             if (displayUi(0, 0, origFrame)) {
+
+                /* Signal to threads to end */
                 alive = false;
             }
         }

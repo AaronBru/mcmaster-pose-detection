@@ -7,16 +7,16 @@
 
 using namespace cv;
 
-void DetectPoseRealsense::processFrame(Mat& origFrame, Mat& depthFrame)
+/* processFrame
+Pass the colorframe and depth frame from librealsense to this function here to detect any ids
+that the class is set to detect (via validIds in the constructor) */
+void DetectPoseRealsense::processFrame(Mat& colorFrame, Mat& depthFrame)
 {
-//    Ptr<aruco::Dictionary> dictionary = aruco::getPredefinedDictionary(aruco::DICT_4X4_250);
-    //Ptr<aruco::DetectorParameters> arucoParam = aruco::DetectorParameters::create();
-
     std::vector<std::vector<Point2f>> allMarkers;
     std::vector<std::vector<Point2f>> rejected;
     std::vector<int> markerIds;
 
-    aruco::detectMarkers(origFrame, dictionary, allMarkers, markerIds, arucoParam, rejected);
+    aruco::detectMarkers(colorFrame, dictionary, allMarkers, markerIds, arucoParam, rejected);
 
     int markerId;
     int i = 0;
@@ -26,6 +26,7 @@ void DetectPoseRealsense::processFrame(Mat& origFrame, Mat& depthFrame)
         markerId = markerIds[i];
 
         bool validId = false;
+        /* Filter out unused ids */
         for (unsigned int j = 0; j < validIds.size(); j++) {
             if (validIds[j] == markerId) {
                 validId = true;
@@ -41,13 +42,12 @@ void DetectPoseRealsense::processFrame(Mat& origFrame, Mat& depthFrame)
         float cornerDepth;
         float cornerCoord[3];
 
-        bool validDepth = true;
         int j = 0;
 
         for (auto markerCorner = marker->begin(); markerCorner != marker->end(); markerCorner++) {
             cornerDepth = depthScale * depthFrame.at<ushort>((int)markerCorner->y, (int)markerCorner->x);
+            /* Check for a valid depth. If not valid, remove all points related to the marker */
             if (cornerDepth < 0.05) {
-                validDepth = false;
                 for (int k = 0; k < j; k++) {
                     deprojectedPoints.pop_back();
                 }
@@ -57,11 +57,10 @@ void DetectPoseRealsense::processFrame(Mat& origFrame, Mat& depthFrame)
             cornerPixel[1] = markerCorner->y;
 
             rs2_deproject_pixel_to_point(cornerCoord, intrinsics, cornerPixel, cornerDepth);
+
+            /* Points are added to deprojectedPoints in the same order as foundIds. */
             deprojectedPoints.push_back(Point3f(cornerCoord[0], cornerCoord[1],  cornerCoord[2]));
             j++;
-        }
-        if (!validDepth) {
-            continue;
         }
 
         foundIds.push_back(markerId);
@@ -69,12 +68,16 @@ void DetectPoseRealsense::processFrame(Mat& origFrame, Mat& depthFrame)
 }
 
 
+/* getPose
+After calling processFrame, call this function with a map of associated Aruco marker ids and corner positions to get
+the rotation and translation of the object */
 bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, std::array<float, 3> &translation)
 {
     if (!foundIds.size()) {
         return false;
     }
 
+    /* Determine which of the detected ids are also object ids */
     std::vector<int> objectIds;
     for (auto &id : foundIds) {
         if (objectMarkers.count(id) > 0) {
@@ -89,6 +92,8 @@ bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, s
     Mat markerCorners = Mat(deprojectedPoints.size(), 3, CV_32FC1, deprojectedPoints.data());
 
     Mat refCorners;
+
+    /* Build a matrix of corresponding reference and observed points */
     if (objectIds.size() == 1) {
         refCorners = objectMarkers[objectIds[0]];
     }
@@ -103,6 +108,7 @@ bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, s
 }
 
 
+/* Helper function for use in draw markers */
 static void addVector(float (*vecA)[3], float (*vecB)[3], float (*vecOut)[3])
 {
     for (size_t i = 0; i < 3; i++) {
@@ -111,6 +117,7 @@ static void addVector(float (*vecA)[3], float (*vecB)[3], float (*vecOut)[3])
 }
 
 
+/* Helper function for use in draw markers */
 static void scaleVector(float (*vec)[3], float scaleFactor)
 {
 
@@ -120,6 +127,7 @@ static void scaleVector(float (*vec)[3], float scaleFactor)
 }
 
 
+/* Helper function to draw markers */
 void drawMarker(Mat& rot, std::array<float, 3> translation, const struct rs2_intrinsics *intrinsics, Mat &origFrame)
 {
     float origPixel[2];

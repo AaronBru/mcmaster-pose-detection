@@ -29,6 +29,7 @@ static std::array<float, 3> centerPointCloud(Mat& points)
     return translation;
 }
 
+/* Compute rotation and translation from kabsch's algorithm */
 void computeRotAndTrans(Mat &points, Mat &origPoints, std::array<float, 3> &translation, Mat& rot)
 {
     translation = centerPointCloud(points);
