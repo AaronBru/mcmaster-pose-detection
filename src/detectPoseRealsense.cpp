@@ -85,11 +85,6 @@ bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, s
             objectIds.push_back(id);
             cornerPoints.insert(std::end(cornerPoints), std::begin(deprojectedPoints[id]),
                                                         std::end(deprojectedPoints[id]));
-#if 0
-            for (auto elem : deprojectedPoints[id]) {
-                cornerPoints.push_back(elem);
-            }
-#endif
         }
     }
 

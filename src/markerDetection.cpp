@@ -26,7 +26,8 @@ using namespace cv;
 #define FACE_ID 0
 #define SIDE_ID 5
 #define TOP_ID  11
-std::vector<int> validIds {FACE_ID, SIDE_ID, TOP_ID};
+#define FLAT_ID 18
+std::vector<int> validIds {FACE_ID, SIDE_ID, TOP_ID, FLAT_ID};
 
 #define OBJECT_HEIGHT 0.14
 #define OBJECT_WIDTH  0.078
@@ -58,6 +59,16 @@ static const Mat topMarker (POINTS_PER_MARKER, 3, CV_32FC1, topPoints);
 static       std::map<int, Mat> objectMarker = {{FACE_ID, faceMarker},
                                                  {SIDE_ID, sideMarker},
                                                  {TOP_ID,  topMarker}};
+
+#define FLAT_WIDTH 0.06
+#define FLAT_HEIGHT -0.02
+static float flatPoints[POINTS_PER_MARKER][3] = {{-FLAT_WIDTH / 2, FLAT_WIDTH / 2, FLAT_HEIGHT},
+                                                 { FLAT_WIDTH / 2, FLAT_WIDTH / 2, FLAT_HEIGHT},
+                                                 { FLAT_WIDTH / 2,-FLAT_WIDTH / 2, FLAT_HEIGHT},
+                                                 {-FLAT_WIDTH / 2,-FLAT_WIDTH / 2, FLAT_HEIGHT}};
+static const Mat flatMarker(POINTS_PER_MARKER, 3, CV_32FC1, flatPoints);
+
+static std::map<int, Mat> flatObjMarker = {{FLAT_ID, flatMarker}};
 
 /* Helper function to display window. Hit escape to close application */
 static bool displayUi(int xTarget, int yTarget, Mat& image)
@@ -122,6 +133,9 @@ int main()
     Mat rot(Size(3,3), CV_32FC1);
     std::array<float, 3> translation {0, 0, 0};
 
+    Mat rotFlat(Size(3, 3), CV_32FC1);
+    std::array<float, 3> transFlat {0, 0, 0};
+
     rs2::align align(rsCfg.rsAlignTo);
     while(alive) {
         /* Receive frames from other thread here */
@@ -143,9 +157,15 @@ int main()
             poseDetect.processFrame(origFrame, depthFrame);
 
             /* Detect pose here with the object map created above */
+
+            if (poseDetect.getPose(flatObjMarker, rotFlat, transFlat)) {
+                drawMarker(rotFlat, transFlat, &intrinsics, origFrame);
+            }
             if (poseDetect.getPose(objectMarker, rot, translation)) {
                 drawMarker(rot, translation, &intrinsics, origFrame);
             }
+
+
 
             /* Determine latency in milliseconds between frames */
             auto elapsed = std::chrono::high_resolution_clock::now() - start;
