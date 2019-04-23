@@ -21,7 +21,6 @@ void DetectPoseRealsense::processFrame(Mat& colorFrame, Mat& depthFrame)
     int markerId;
     int i = 0;
     foundIds.clear();
-    deprojectedPoints.clear();
     for (auto marker = allMarkers.begin(); marker != allMarkers.end(); marker++) {
         markerId = markerIds[i];
 
@@ -44,25 +43,26 @@ void DetectPoseRealsense::processFrame(Mat& colorFrame, Mat& depthFrame)
 
         int j = 0;
 
+        bool validDepth = true;
+        deprojectedPoints[markerId].clear();
         for (auto markerCorner = marker->begin(); markerCorner != marker->end(); markerCorner++) {
             cornerDepth = depthScale * depthFrame.at<ushort>((int)markerCorner->y, (int)markerCorner->x);
             /* Check for a valid depth. If not valid, remove all points related to the marker */
             if (cornerDepth < 0.05) {
-                for (int k = 0; k < j; k++) {
-                    deprojectedPoints.pop_back();
-                }
+                validDepth = false;
+                deprojectedPoints[markerId].clear();
                 break;
             }
             cornerPixel[0] = markerCorner->x;
             cornerPixel[1] = markerCorner->y;
 
             rs2_deproject_pixel_to_point(cornerCoord, intrinsics, cornerPixel, cornerDepth);
-
-            /* Points are added to deprojectedPoints in the same order as foundIds. */
-            deprojectedPoints.push_back(Point3f(cornerCoord[0], cornerCoord[1],  cornerCoord[2]));
+            deprojectedPoints[markerId].push_back(Point3f(cornerCoord[0], cornerCoord[1],  cornerCoord[2]));
             j++;
         }
-
+        if (!validDepth) {
+            continue;
+        }
         foundIds.push_back(markerId);
     }
 }
@@ -79,9 +79,17 @@ bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, s
 
     /* Determine which of the detected ids are also object ids */
     std::vector<int> objectIds;
+    std::vector<Point3f> cornerPoints;
     for (auto &id : foundIds) {
         if (objectMarkers.count(id) > 0) {
             objectIds.push_back(id);
+            cornerPoints.insert(std::end(cornerPoints), std::begin(deprojectedPoints[id]),
+                                                        std::end(deprojectedPoints[id]));
+#if 0
+            for (auto elem : deprojectedPoints[id]) {
+                cornerPoints.push_back(elem);
+            }
+#endif
         }
     }
 
@@ -89,7 +97,7 @@ bool DetectPoseRealsense::getPose(std::map<int, Mat> &objectMarkers, Mat &rot, s
         return false;
     }
 
-    Mat markerCorners = Mat(deprojectedPoints.size(), 3, CV_32FC1, deprojectedPoints.data());
+    Mat markerCorners = Mat(cornerPoints.size(), 3, CV_32FC1, cornerPoints.data());
 
     Mat refCorners;
 

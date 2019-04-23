@@ -17,10 +17,17 @@ class DetectPoseRealsense {
         const struct rs2_intrinsics *intrinsics;
         float depthScale;
         DetectPoseRealsense(const struct rs2_intrinsics *intrinsics, float depthScale, std::vector<int> validIds):
-        intrinsics(intrinsics), depthScale(depthScale), validIds(validIds)
+        intrinsics(intrinsics), depthScale(depthScale), validIds(validIds), deprojectedPoints()
         {
             dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_4X4_250);
             arucoParam = cv::aruco::DetectorParameters::create();
+
+#if 0
+            for (auto id : validIds) {
+                std::vector<cv::Point3f> empty;
+                deprojectedPoints[id] = empty;
+            }
+#endif
         }
 
         void processFrame(cv::Mat& origFrame, cv::Mat& depthFrame);
@@ -28,7 +35,8 @@ class DetectPoseRealsense {
 
     private:
         std::vector<int> validIds;
-        std::vector<cv::Point3f> deprojectedPoints;
+	std::map<int, std::vector<cv::Point3f>> deprojectedPoints;
+        //std::vector<cv::Point3f> deprojectedPoints;
         std::vector<int> foundIds;
         cv::Ptr<cv::aruco::Dictionary> dictionary;
         cv::Ptr<cv::aruco::DetectorParameters> arucoParam;
